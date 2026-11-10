@@ -1,0 +1,3 @@
+# Report output contains drive serial numbers - keep it out of the repo
+*.csv
+*.log
