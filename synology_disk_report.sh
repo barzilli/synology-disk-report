@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.3.1"
+VERSION="2.4"
 
 case "${1:-}" in
     -h|--help)
@@ -293,7 +293,12 @@ cache_slot() {
     echo "2 $((card * 10 + s))|Cache device $card-$s"
 }
 
-# Is this a cache drive that belongs in the NVMe / M.2 section?
+# 2.5" SSDs in dedicated cache bays (e.g. RS10613xs+): DSM lists them as cache
+# devices and names them "Cache device 1", "Cache device 2" ... in its own order.
+CACHEBAYMAP="$(printf '%s\n' "$SLOTMAP" | awk -F'|' '$2 ~ /^M\.2 Drive / && $1 !~ /\/(nvme|nvc)/ {
+        n = $2; sub(/.* /, "", n); printf "%06d %s\n", n, $1 }' | sort | awk '{ print $2 "|" NR }')"
+
+# Is this a cache drive that belongs in the SSD / M.2 cache section?
 is_cache_dev() {
     local name; name="$(basename "$1")"
     case "$name" in nvme*|nvc*) return 0 ;; esac
@@ -329,9 +334,12 @@ get_slot() {
             echo "0 ${label##* }|$label"; return ;;
         "M.2 Drive "*)
             case "$name" in
-                nvc*) cache_slot "${label##* }"; return ;;
+                nvc*)  cache_slot "${label##* }"; return ;;           # SATA M.2 on a card
+                nvme*) echo "2 ${label##* }|$label"; return ;;       # built-in M.2 slot
             esac
-            echo "2 ${label##* }|$label"; return ;;
+            # 2.5" SSD in a dedicated cache bay
+            n="$(printf '%s\n' "$CACHEBAYMAP" | awk -F'|' -v d="$dev" '$1 == d { print $2; exit }')"
+            echo "2 $((100 + ${n:-0}))|Cache device ${n:-?}"; return ;;
     esac
 
     # SATA M.2 SSDs on an adapter card (M2D17 etc.) that synodisk didn't list
@@ -670,7 +678,9 @@ process_sata_cache() {
         elif [ "$used" -ge 80 ];  then add_note "over 80% worn - plan replacement"
         fi
     fi
-    [ -n "$realloc" ] && [ "$realloc" -gt 0 ] && add_note "$realloc reallocated sectors"
+    if [ -n "$realloc" ] && [ "$realloc" -gt 0 ]; then
+        if [ "$realloc" -eq 1 ]; then add_note "1 retired NAND block"; else add_note "$realloc retired NAND blocks"; fi
+    fi
     [ -n "$media" ] && [ "$media" -gt 0 ] && add_note "$media uncorrectable errors"
     case "$health" in ""|PASSED|OK) ;; *) add_note "SMART health: $health" ;; esac
     [ -z "$NOTES" ] && NOTES="OK"
@@ -733,8 +743,8 @@ cat "$TMPD"/nvme/* 2>/dev/null | sort -t "$(printf '\t')" -k1,1n -k2,2n \
     | awk -F'\t' '$3 == "" || !seen[$3]++' > "$TMPD/nvme.rows"
 
 echo
-echo "NVMe / M.2 Cache Drives"
-echo "======================="
+echo "SSD / M.2 Cache Drives"
+echo "======================"
 if [ -s "$TMPD/nvme.rows" ]; then
     printf "$FMT_N" "Slot" "Device" "Make" "Model" "Serial" "PowerOnHrs" "Used%" "Life%" "Spare%" "Written" \
         "MediaErr" "ErrLog" "Unsafe" "Temp" "Health" "Notes"
@@ -755,7 +765,7 @@ if [ -s "$TMPD/nvme.rows" ]; then
           cut -f5 "$TMPD/nvme.rows"; } > "$NVME_CSV" || NVME_CSV=""
     fi
 else
-    echo "No NVMe or M.2 cache drives found."
+    echo "No SSD or M.2 cache drives found."
 fi
 
 [ -n "$CSV_OUT" ] && echo && echo "CSV saved to: $CSV_OUT"

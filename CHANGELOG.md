@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4 — 2026-11-10
+- **2.5" SSDs in dedicated cache bays** (such as on an RS10613xs+) were wrongly labelled `M.2 Drive 11` / `12`. They're now `Cache device 1`, `Cache device 2` …, numbered in DSM's order, as in Storage Manager.
+- The cache section is renamed **SSD / M.2 Cache Drives**.
+- SSD notes say "retired NAND blocks" instead of "reallocated sectors".
+
 ## 2.3.1 — 2026-11-10
 - When an NVMe drive rejects `smartctl`'s identify command, the script no longer retries `smartctl` three more times before using the fallback. The drive records each rejected command in its error log, so 2.3 added 4 log entries per drive per run on affected units (seen on an SA3400); it's now 1.
 
