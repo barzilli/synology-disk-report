@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8 — 2026-11-10
+- **SAS drives:** power-on hours are now read correctly. The old parser misread the `hours:minutes` format and missed Seagate's `number of hours powered up` line; if neither is in the standard output, the script falls back to `smartctl -x`.
+- **SAS drives:** the Uncorr column now shows total uncorrected read, write and verify errors from the error counter log, instead of `n/a`.
+- **SATA drives behind a SCSI layer** (such as Synology SAT5210 SSDs on the HD6500), which a plain `smartctl -a` reports as lacking SMART, are now read with `-d sat`, so their hours and health appear.
+- **Drives that aren't in Synology's bay list** are no longer given a guessed bay number that could clash with a real bay. SSDs show as `Internal SSD N`, anything else as `Not in bay list`.
+
 ## 1.7 — 2026-11-09
 - New **NVMe / M.2 cache drives** section: wear level (Used% / Life%), spare capacity, data written, media errors, error-log entries, unsafe shutdowns, temperature and NVMe critical warnings, plus a plain-English Notes column.
 - NVMe drives are written to a separate `*_nvme.csv` file when CSV output is on.

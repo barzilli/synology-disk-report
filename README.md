@@ -4,7 +4,7 @@ A single shell script that prints a disk health report for a Synology NAS: one r
 
 - **Hard drives (SATA / SAS):** make, model, serial number, power-on hours, bad-sector counters (reallocated, pending, uncorrectable) and the overall SMART health result.
 - **NVMe / M.2 cache drives:** wear level (percent of rated endurance used and life remaining), spare capacity, total data written, media errors, error-log entries, unsafe shutdowns, temperature and NVMe critical warnings, with any problems spelled out in plain English.
-- **Slot names match Storage Manager:** `Drive 3`, `M.2 Drive 1`, and expansion units by model and number, such as `RX1217sas-2 Drive 5`.
+- **Slot names match Storage Manager:** `Drive 3`, `M.2 Drive 1`, and expansion units by model and number, such as `RX1217sas-2 Drive 5`. Drives outside the main bays, such as the SSD slots on an HD6500, show as `Internal SSD N`.
 - **Fast on big systems:** drives are queried in parallel, so a 60-drive setup finishes in a few seconds.
 - **Optional CSV output** for spreadsheets or tracking trends over time.
 
@@ -13,7 +13,7 @@ Nothing to install: it uses only `bash` and `smartctl`, which are both part of D
 ## Sample output
 
 ```
-Disk Report v1.7 - nas01 - 2026-11-09 10:27
+Disk Report v1.8 - nas01 - 2026-11-09 10:27
 
 Slot                   Device     Make             Model                    Serial                 PowerOnHrs  Realloc  Pending   Uncorr Health
 ----                   ------     ----             -----                    ------                 ----------  -------  -------   ------ ------
@@ -85,7 +85,7 @@ Tick **Send run details by email** to have the report emailed to you.
 | PowerOnHrs | Total hours the drive has been powered on (8,760 hours = 1 year) |
 | Realloc | Sectors the drive found bad and replaced with spares (SMART ID 5; the grown defect list on SAS drives) |
 | Pending | Sectors that couldn't be read and are waiting to be remapped (ID 197) |
-| Uncorr | Sectors that couldn't be recovered (ID 198) |
+| Uncorr | Sectors that couldn't be recovered (ID 198); for SAS drives, total uncorrected read + write + verify errors from the error counter log |
 | Health | The drive's own overall SMART verdict |
 
 A drive with a few reallocated sectors that stays stable can keep running for years. A count that **keeps rising**, any **pending or uncorrectable** sectors, or a **FAILED** health result are signs to back up and plan a replacement.
@@ -125,6 +125,7 @@ A drive with a few reallocated sectors that stays stable can keep running for ye
 ## Tested on
 
 - DSM 7.x, a 12-bay rackmount unit with SAS drives and four daisy-chained RX1217sas expansion units (60 drives in total)
+- DSM 7.x, an HD6500 with 60 SAS drives (Seagate Exos) and two Synology SAT5210 SATA SSDs
 - The NVMe section and the M.2 slot naming have been tested against simulated `smartctl` output only. Reports from systems with M.2 drives, especially on PCIe adapter cards, are welcome.
 
 ## Contributing

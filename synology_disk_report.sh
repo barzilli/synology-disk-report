@@ -16,7 +16,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="1.7"
+VERSION="1.8"
 
 case "${1:-}" in
     -h|--help)
@@ -61,6 +61,15 @@ field() {
 # RAW value of an ATA SMART attribute by ID (column 10), digits only
 attr() {
     printf '%s\n' "$OUT" | awk -v id="$1" '$1 == id { print $10; exit }' | sed 's/[^0-9].*//'
+}
+
+# SAS power-on hours, from either of the two formats smartctl uses:
+#   "number of hours powered up = 34011.77"                 (Seagate / Hitachi)
+#   "Accumulated power on time, hours:minutes 34011:46 ..."  (most SAS drives, -x)
+sas_hours() {
+    awk '/number of hours powered up/ { sub(/.*= */, ""); print int($0); exit }
+         /power on time, hours:minutes/ {
+             for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+:[0-9]+$/) { split($i, a, ":"); print a[1]; exit } }'
 }
 
 # Strip commas / non-digits from a number like "12,345"
@@ -230,6 +239,23 @@ get_slot() {
             echo "2 ${label##* }|$label"; return ;;
     esac
 
+    # Not in Synology's bay list even though the list exists (e.g. the
+    # dedicated SSD slots on an HD6500): don't guess a bay number, which would
+    # clash with a real bay - name it by type instead.
+    case "$name" in
+        nvme*) ;;
+        *)
+            if printf '%s\n' "$SLOTMAP" | grep -q '|'; then
+                n="${name##*[!0-9]}"; [ -z "$n" ] && n=0
+                if [ "$(cat "$SYSFS/block/$name/queue/rotational" 2>/dev/null)" = "0" ]; then
+                    echo "2 $n|Internal SSD $n"
+                else
+                    echo "3 $n|Not in bay list"
+                fi
+                return
+            fi ;;
+    esac
+
     # Fallbacks worked out from the device name
     case "$name" in
         sata[0-9]*)  n="${name#sata}"; echo "0 $n|Drive $n" ;;
@@ -259,10 +285,16 @@ fi
 process_disk() {
     local dev="$1" family vendor model serial make hours realloc pending uncorr health
     local slotinfo slotkey slot line csv
+    local alt
     OUT="$("$SMARTCTL" -a "$dev" 2>/dev/null)"
-    # Some Synology models need an explicit SAT device type
+    # SATA drives behind a SAS/SCSI layer (e.g. Synology SAT5210 SSDs) can look
+    # like SCSI disks "lacking SMART"; asking with "-d sat" gets the real data.
     if ! printf '%s\n' "$OUT" | grep -qE '^(Device Model|Model Number|Product):'; then
         OUT="$("$SMARTCTL" -a -d sat "$dev" 2>/dev/null)"
+    elif ! printf '%s\n' "$OUT" | grep -qE 'overall-health self-assessment|SMART Health Status' \
+         || printf '%s\n' "$OUT" | grep -q 'lacks SMART capability'; then
+        alt="$("$SMARTCTL" -a -d sat "$dev" 2>/dev/null)"
+        printf '%s\n' "$alt" | grep -qE 'overall-health self-assessment|^Device Model:' && OUT="$alt"
     fi
 
     family="$(field 'Model Family')"
@@ -285,10 +317,13 @@ process_disk() {
         uncorr="$(num "$(field 'Media and Data Integrity Errors')")"
     elif printf '%s\n' "$OUT" | grep -q 'grown defect list'; then
         # ---- SAS ----
-        hours="$(printf '%s\n' "$OUT" | awk -F': *' '/Accumulated power on time/ {split($2,a,":"); print a[1]; exit}')"
+        hours="$(printf '%s\n' "$OUT" | sas_hours)"
+        # some drives only report power-on time in the extended (-x) output
+        [ -z "$hours" ] && hours="$("$SMARTCTL" -x "$dev" 2>/dev/null | sas_hours)"
         realloc="$(printf '%s\n' "$OUT" | awk -F': *' '/grown defect list/ {print $2; exit}')"
         pending="n/a"
-        uncorr="n/a"
+        # total uncorrected read + write + verify errors from the error counter log
+        uncorr="$(printf '%s\n' "$OUT" | awk '/^(read|write|verify):/ { t += $NF; n++ } END { if (n) print t }')"
     else
         # ---- SATA ----
         hours="$(attr 9)"
@@ -426,7 +461,7 @@ cut -f4 "$TMPD/all.rows"
 echo
 echo "Realloc = reallocated sectors (SATA ID 5) / grown defects (SAS)"
 echo "Pending = sectors waiting to be remapped (ID 197)"
-echo "Uncorr  = uncorrectable sectors (ID 198)"
+echo "Uncorr  = uncorrectable sectors (ID 198) / total uncorrected read+write errors (SAS)"
 echo "Any non-zero bad sector count is worth watching; a rising count means plan a replacement."
 # --- NVMe / M.2 cache section -------------------------------------------------
 cat "$TMPD"/nvme/* 2>/dev/null | sort -t "$(printf '\t')" -k1,1n -k2,2n \
