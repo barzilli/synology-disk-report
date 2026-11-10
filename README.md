@@ -3,8 +3,8 @@
 A single shell script that prints a disk health report for a Synology NAS: one row per drive, in bay order, with the numbers that matter when you're deciding whether a drive needs replacing.
 
 - **Hard drives and SATA SSDs:** make, model, serial number, power-on hours, bad-sector counters (reallocated, pending, uncorrectable), SSD life remaining and the overall SMART health result.
-- **NVMe / M.2 cache drives:** wear level (percent of rated endurance used and life remaining), spare capacity, total data written, media errors, error-log entries, unsafe shutdowns, temperature and NVMe critical warnings, with any problems spelled out in plain English.
-- **Slot names match Storage Manager:** `Drive 3`, `M.2 Drive 1`, and expansion units by model and number, such as `RX1217sas-2 Drive 5`. SSDs outside the main bays, such as the system SSDs on an HD6500, show as `System Drive N`.
+- **NVMe and SATA M.2 cache drives:** wear level (percent of rated endurance used and life remaining), spare capacity, total data written, media errors, error-log entries, unsafe shutdowns, temperature and NVMe critical warnings, with any problems spelled out in plain English.
+- **Slot names match Storage Manager:** `Drive 3`, `M.2 Drive 1`, and expansion units by model and number, such as `RX1217sas-2 Drive 5`. SATA M.2 SSDs on an adapter card show as `Cache device 1-1` (card 1, slot 1), and SSDs outside the main bays, such as the system SSDs on an HD6500, show as `System Drive N`.
 - **Fast on big systems:** drives are queried in parallel, so a 60-drive setup finishes in a few seconds.
 - **Optional CSV output** for spreadsheets or tracking trends over time.
 
@@ -58,7 +58,7 @@ sudo /volume1/scripts/synology_disk_report.sh
 # Also save CSV files
 sudo /volume1/scripts/synology_disk_report.sh /volume1/scripts/disks.csv
 #   -> disks.csv       hard drives
-#   -> disks_nvme.csv  NVMe / M.2 drives (only written if any are found)
+#   -> disks_nvme.csv  NVMe and M.2 cache drives (only written if any are found)
 
 # Change how many drives are queried at once (default 32)
 sudo JOBS=8 /volume1/scripts/synology_disk_report.sh
@@ -92,15 +92,17 @@ Tick **Send run details by email** to have the report emailed to you.
 
 Plan to replace an SSD when Life% falls below about 10–20%. A drive with a few reallocated sectors that stays stable can keep running for years. A count that **keeps rising**, any **pending or uncorrectable** sectors, or a **FAILED** health result are signs to back up and plan a replacement.
 
-### NVMe / M.2 drives
+### NVMe / M.2 cache drives
+
+This section lists NVMe drives and SATA M.2 cache SSDs (for example on an M2D17 adapter card). SATA SSDs fill the same columns from their matching SMART attributes; columns that only exist on NVMe drives show `n/a`.
 
 | Column | Meaning |
 |---|---|
 | Used% | Share of the drive's rated write endurance used up (wear level). It can go past 100%. |
 | Life% | 100 − Used% |
-| Spare% | Spare flash still available / the level at which the drive raises a warning |
-| Written | Total data written to the drive |
-| MediaErr | Unrecovered data errors. This should always be 0. |
+| Spare% | NVMe only: spare flash still available / the level at which the drive raises a warning |
+| Written | Total data written to the drive. For SATA SSDs it is shown only when the drive states the unit it counts in, since makers count writes differently. |
+| MediaErr | Unrecovered data errors (SATA: uncorrectable errors, ID 187 or 198). This should always be 0. |
 | ErrLog | Entries in the drive's error log. Often harmless (for example, commands the drive doesn't support), but watch for fast growth. |
 | Unsafe | Power losses without a clean shutdown |
 | Notes | Problems in plain English: NVMe critical warnings (read-only mode, reliability degraded, etc.), over 80% or 100% worn, low spare capacity, media errors, time spent over the temperature limits |
@@ -128,6 +130,7 @@ Plan to replace an SSD when Life% falls below about 10–20%. A drive with a few
 
 - DSM 7.x, a 12-bay rackmount unit with SAS drives and four daisy-chained RX1217sas expansion units (60 drives in total)
 - DSM 7.x, an HD6500 with 60 SAS drives (Seagate Exos) and two Synology SAT5210 SATA SSDs
+- An RS4017xs+ with 16 SATA drives and two SATA M.2 cache SSDs on an adapter card
 - The NVMe section and the M.2 slot naming have been tested against simulated `smartctl` output only. Reports from systems with M.2 drives, especially on PCIe adapter cards, are welcome.
 
 ## Contributing

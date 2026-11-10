@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.0 — 2026-11-10
+- **SATA M.2 cache SSDs** (for example on an M2D17 adapter card) now appear in the NVMe / M.2 Cache Drives section instead of the main table. Their wear, written data (when the unit is known), uncorrectable errors, error-log count, unexpected power losses and temperature fill the same columns as NVMe drives, and the Notes column flags heavy wear, reallocated sectors and uncorrectable errors.
+- **CSV change:** these drives move from the main CSV to `*_nvme.csv`.
+- Adapter-card M.2 slots are named like Storage Manager: `Cache device <card>-<slot>`, for example `Cache device 1-2`.
+- With no cache drives, the section now says "No NVMe or M.2 cache drives found."
+
 ## 1.9 — 2026-11-10
 - New **Life%** column: SATA SSD life remaining, read from the SSD's own wear attribute (231 SSD_Life_Left, 202 Percent_Lifetime_Remain, 169 Remaining_Life_Percentage, 177 Wear_Leveling_Count or 233 Media_Wearout_Indicator). Hard drives show `n/a`.
 - CSV gets a matching `SSDLifeRemaining` column, added at the end so existing spreadsheets keep working.

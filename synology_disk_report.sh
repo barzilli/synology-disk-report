@@ -6,8 +6,8 @@
 # Shows: Make, Model, Serial Number, Power-On Hours, Bad Sector counters
 #        (Reallocated / Pending / Uncorrectable), SATA SSD life remaining
 #        and overall SMART health.
-#        NVMe / M.2 cache drives get their own section with wear level,
-#        spare capacity, data written, error counters and temperature.
+#        NVMe and SATA M.2 cache drives get their own section with wear
+#        level, spare capacity, data written, error counters and temperature.
 #
 # Requires: bash 4.3+, smartctl (both ship with DSM), root.
 #
@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="1.9"
+VERSION="2.0"
 
 case "${1:-}" in
     -h|--help)
@@ -233,6 +233,22 @@ if [ -d "$SYSFS/class/enclosure" ]; then
     done
 fi
 
+# SATA M.2 adapter cards (e.g. M2D17) hold 2 SSDs each; DSM names them
+# "Cache device <card>-<slot>", so cache device 3 is the first slot of card 2.
+cache_slot() {
+    local n="$1" card s
+    card=$(( (n - 1) / 2 + 1 )); s=$(( (n - 1) % 2 + 1 ))
+    echo "2 $((card * 10 + s))|Cache device $card-$s"
+}
+
+# Is this a cache drive that belongs in the NVMe / M.2 section?
+is_cache_dev() {
+    local name; name="$(basename "$1")"
+    case "$name" in nvme*|nvc*) return 0 ;; esac
+    # use the drive's first label, the same one get_slot uses
+    printf '%s\n' "$SLOTMAP" | awk -F'|' -v d="$1" '$1 == d { f = ($2 ~ /^M\.2 Drive /); exit } END { exit !f }'
+}
+
 # Prints "SORTGROUP SORTNUM|Human-readable slot"
 get_slot() {
     local dev="$1" name label n einfo ename eidx
@@ -253,7 +269,15 @@ get_slot() {
         "Drive "*)
             echo "0 ${label##* }|$label"; return ;;
         "M.2 Drive "*)
+            case "$name" in
+                nvc*) cache_slot "${label##* }"; return ;;
+            esac
             echo "2 ${label##* }|$label"; return ;;
+    esac
+
+    # SATA M.2 SSDs on an adapter card (M2D17 etc.) that synodisk didn't list
+    case "$name" in
+        nvc[0-9]*) cache_slot "${name#nvc}"; return ;;
     esac
 
     # Not in Synology's bay list even though the list exists (e.g. the
@@ -373,7 +397,7 @@ process_disk() {
 }
 
 # --- NVMe / M.2 worker (runs in parallel) ------------------------------------
-FMT_N="%-14s %-9s %-15s %-26s %-20s %10s %5s %5s %7s %9s %8s %7s %7s %5s %-8s %s\n"
+FMT_N="%-17s %-9s %-15s %-26s %-20s %10s %5s %5s %7s %9s %8s %7s %7s %5s %-8s %s\n"
 
 add_note() { NOTES="${NOTES:+$NOTES; }$1"; }
 
@@ -458,6 +482,72 @@ process_nvme() {
     printf '%s\t%s\t%s\t%s\t%s\n' "${slotkey% *}" "${slotkey#* }" "$serial" "$line" "$csv"
 }
 
+# --- SATA M.2 cache worker (runs in parallel) ---------------------------------
+# Same columns as the NVMe rows, filled from the matching ATA attributes.
+# RAW value (column 10) of the first attribute whose NAME matches a regex
+attr_named() {
+    printf '%s\n' "$OUT" | awk -v re="$1" '$1 ~ /^[0-9]+$/ && $2 ~ re { print $10; exit }' | sed 's/[^0-9].*//'
+}
+
+process_sata_cache() {
+    local dev="$1" name model serial family make hours life used realloc media errlog unsafe temp health
+    local written alt slotinfo slotkey slot line csv
+    name="$(basename "$dev")"
+    OUT="$("$SMARTCTL" -a "$dev" 2>/dev/null)"
+    if ! printf '%s\n' "$OUT" | grep -qE 'overall-health self-assessment'; then
+        alt="$("$SMARTCTL" -a -d sat "$dev" 2>/dev/null)"
+        printf '%s\n' "$alt" | grep -qE 'overall-health self-assessment|^Device Model:' && OUT="$alt"
+    fi
+
+    family="$(field 'Model Family')"
+    model="$(field 'Device Model')"; [ -z "$model" ] && model="$(field 'Product')"
+    serial="$(field 'Serial Number')"; [ -z "$serial" ] && serial="$(field 'Serial number')"
+    make="$(get_make "$family" "$model" "$(field 'Vendor')")"
+    [ "$make" = "Unknown" ] && [ -n "$model" ] && make="${model%% *}"
+
+    hours="$(attr 9)"
+    life="$(ssd_life)"
+    used=""; [ -n "$life" ] && used=$((100 - life))
+    realloc="$(attr 5)"
+    media="$(attr 187)"; [ -z "$media" ] && media="$(attr 198)"           # reported / offline uncorrectable
+    unsafe="$(attr_named '^(Unexpect.*Power_Loss|POR_Recovery_Count|Unsafe_Shutdown)')"
+    temp="$(attr 194)"; [ -z "$temp" ] && temp="$(attr 190)"
+    health="$(printf '%s\n' "$OUT" | awk -F': *' '/overall-health self-assessment/ {print $NF; exit}')"
+
+    # ATA error log: "ATA Error Count: N" or "No Errors Logged"
+    errlog="$(printf '%s\n' "$OUT" | awk '/^ATA Error Count:/ { print $4 + 0; exit } /No Errors Logged/ { print 0; exit }')"
+
+    # data written: only when the attribute name says which unit it counts in
+    written="$(printf '%s\n' "$OUT" | awk '
+        function show(b) { if (b >= 1e12) printf "%.1f TB", b / 1e12; else printf "%.0f GB", b / 1e9 }
+        $1 ~ /^[0-9]+$/ && $2 == "Total_LBAs_Written"                      { show($10 * 512); exit }
+        $1 ~ /^[0-9]+$/ && $2 == "Host_Writes_32MiB"                       { show($10 * 33554432); exit }
+        $1 ~ /^[0-9]+$/ && $2 ~ /^(Host_Writes_GiB|Lifetime_Writes_GiB|Total_Writes_GiB)$/ { show($10 * 1073741824); exit }')"
+
+    NOTES=""
+    [ -z "$model" ] && [ -z "$serial" ] && add_note "could not read SMART data"
+    if [ -n "$used" ]; then
+        if   [ "$used" -ge 100 ]; then add_note "rated endurance used up - replace"
+        elif [ "$used" -ge 80 ];  then add_note "over 80% worn - plan replacement"
+        fi
+    fi
+    [ -n "$realloc" ] && [ "$realloc" -gt 0 ] && add_note "$realloc reallocated sectors"
+    [ -n "$media" ] && [ "$media" -gt 0 ] && add_note "$media uncorrectable errors"
+    case "$health" in ""|PASSED|OK) ;; *) add_note "SMART health: $health" ;; esac
+    [ -z "$NOTES" ] && NOTES="OK"
+
+    slotinfo="$(get_slot "$dev")"
+    slotkey="${slotinfo%%|*}"
+    slot="${slotinfo#*|}"
+
+    line="$(printf "$FMT_N" "$slot" "$name" "$make" "${model:0:26}" "${serial:-?}" \
+        "${hours:-?}" "${used:-?}" "${life:-?}" "n/a" "${written:-?}" \
+        "${media:-?}" "${errlog:-?}" "${unsafe:-?}" "${temp:-?}" "${health:-?}" "$NOTES")"
+    csv="\"$slot\",$name,\"$make\",\"$model\",\"$serial\",${hours},${used},${life},n/a,n/a,\"$written\",${media},${errlog},${unsafe},${temp},n/a,${health},\"$NOTES\""
+
+    printf '%s\t%s\t%s\t%s\t%s\n' "${slotkey% *}" "${slotkey#* }" "$serial" "$line" "$csv"
+}
+
 TMPD="$(mktemp -d /tmp/diskreport.XXXXXX)" || { echo "ERROR: cannot create temp dir" >&2; exit 1; }
 trap 'rm -rf "$TMPD"' EXIT
 mkdir "$TMPD/disks" "$TMPD/nvme"
@@ -469,7 +559,11 @@ for dev in $DEVICES; do
     while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n 2>/dev/null || sleep 0.2; done
     case "$(basename "$dev")" in
         nvme*) process_nvme "$dev" > "$TMPD/nvme/$(basename "$dev")" & ;;
-        *)     process_disk "$dev" > "$TMPD/disks/$(basename "$dev")" & ;;
+        *)     if is_cache_dev "$dev"; then
+                   process_sata_cache "$dev" > "$TMPD/nvme/$(basename "$dev")" &
+               else
+                   process_disk "$dev" > "$TMPD/disks/$(basename "$dev")" &
+               fi ;;
     esac
 done
 wait
@@ -504,8 +598,9 @@ if [ -s "$TMPD/nvme.rows" ]; then
     cut -f4 "$TMPD/nvme.rows"
     echo
     echo "Used%    = share of the drive's rated write endurance used up (wear level); Life% = 100 - Used%"
-    echo "Spare%   = spare flash still available / level at which the drive raises a warning"
-    echo "MediaErr = unrecovered data errors - should always be 0"
+    echo "Spare%   = spare flash still available / level at which the drive raises a warning (NVMe only)"
+    echo "Written  = total data written (SATA SSDs: only shown when the drive states the unit it counts in)"
+    echo "MediaErr = unrecovered data errors (SATA: uncorrectable errors, ID 187/198) - should always be 0"
     echo "ErrLog   = entries in the drive's error log; often harmless (e.g. unsupported commands), watch for fast growth"
     echo "Unsafe   = power losses without a clean shutdown"
 
@@ -515,7 +610,7 @@ if [ -s "$TMPD/nvme.rows" ]; then
           cut -f5 "$TMPD/nvme.rows"; } > "$NVME_CSV" || NVME_CSV=""
     fi
 else
-    echo "No NVMe drives found."
+    echo "No NVMe or M.2 cache drives found."
 fi
 
 [ -n "$CSV_OUT" ] && echo && echo "CSV saved to: $CSV_OUT"
