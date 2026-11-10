@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.5 — 2026-11-10
+- **NVMe drives in built-in M.2 slots** (such as on a DS918+) are now named `Cache device 1`, `Cache device 2` … as in Storage Manager, instead of `M.2 Drive N`. If DSM doesn't list a drive, its number is estimated from the device name and marked `(est.)`.
+
 ## 2.4 — 2026-11-10
 - **2.5" SSDs in dedicated cache bays** (such as on an RS10613xs+) were wrongly labelled `M.2 Drive 11` / `12`. They're now `Cache device 1`, `Cache device 2` …, numbered in DSM's order, as in Storage Manager.
 - The cache section is renamed **SSD / M.2 Cache Drives**.

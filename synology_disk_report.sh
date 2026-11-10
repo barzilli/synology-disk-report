@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.4"
+VERSION="2.5"
 
 case "${1:-}" in
     -h|--help)
@@ -202,7 +202,7 @@ if [ -n "$SYNODISK" ]; then
         case "$t" in
             internal) prefix="Drive" ;;
             ebox)     prefix="Expansion Drive" ;;
-            cache)    prefix="M.2 Drive" ;;
+            cache)    prefix="M.2 Drive" ;;   # internal tag for "listed as a cache device"
         esac
         SLOTMAP="$SLOTMAP
 $("$SYNODISK" --enum -t "$t" 2>/dev/null | awk -v pre="$prefix" '
@@ -335,7 +335,7 @@ get_slot() {
         "M.2 Drive "*)
             case "$name" in
                 nvc*)  cache_slot "${label##* }"; return ;;           # SATA M.2 on a card
-                nvme*) echo "2 ${label##* }|$label"; return ;;       # built-in M.2 slot
+                nvme*) echo "2 ${label##* }|Cache device ${label##* }"; return ;;   # built-in M.2 slot
             esac
             # 2.5" SSD in a dedicated cache bay
             n="$(printf '%s\n' "$CACHEBAYMAP" | awk -F'|' -v d="$dev" '$1 == d { print $2; exit }')"
@@ -369,7 +369,7 @@ get_slot() {
         sata[0-9]*)  n="${name#sata}"; echo "0 $n|Drive $n" ;;
         sas[0-9]*)   n="${name#sas}";  echo "0 $n|Drive $n" ;;
         nvme[0-9]*)  n="${name#nvme}"; n="${n%%n*}"; n=$((n + 1))
-                     echo "2 $n|M.2 Drive $n" ;;
+                     echo "2 $n|Cache device $n (est.)" ;;
         sd[a-z])     n="$(printf '%d' "'${name#sd}")"; n=$((n - 96))
                      echo "0 $n|Drive $n (est.)" ;;
         *)           echo "3 0|Unknown" ;;
