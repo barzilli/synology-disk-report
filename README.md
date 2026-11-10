@@ -103,7 +103,7 @@ This section lists NVMe drives and SATA M.2 cache SSDs (for example on an M2D17 
 | Spare% | NVMe only: spare flash still available / the level at which the drive raises a warning |
 | Written | Total data written to the drive. For SATA SSDs it is shown only when the drive states the unit it counts in, since makers count writes differently. |
 | MediaErr | Unrecovered data errors (SATA: uncorrectable errors, ID 187 or 198). This should always be 0. |
-| ErrLog | Entries in the drive's error log. Often harmless (for example, commands the drive doesn't support), but watch for fast growth. |
+| ErrLog | Entries in the drive's error log. Often harmless (for example, commands the drive doesn't support), but watch for fast growth. On NAS units where `smartctl` can't identify the drive (see NVMe fallback below), each run of this script adds one harmless entry. |
 | Unsafe | Power losses without a clean shutdown |
 | Notes | Problems in plain English: NVMe critical warnings (read-only mode, reliability degraded, etc.), over 80% or 100% worn, low spare capacity, media errors, time spent over the temperature limits |
 

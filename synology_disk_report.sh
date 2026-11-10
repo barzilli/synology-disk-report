@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.3"
+VERSION="2.3.1"
 
 case "${1:-}" in
     -h|--help)
@@ -512,6 +512,9 @@ process_nvme() {
     for try in "-a $dev" "-a -d nvme $dev" "-a -d nvme $ctrl" "-a $ctrl"; do
         OUT="$("$SMARTCTL" $try 2>/dev/null)"
         printf '%s\n' "$OUT" | grep -q '^Percentage Used' && break
+        # The drive rejects smartctl's identify command, and records every
+        # rejection in its own error log - so don't retry, go to the fallback.
+        printf '%s\n' "$OUT" | grep -q 'Identify Controller failed' && break
     done
 
     # Some DSM builds' smartctl can't identify these drives ("Read NVMe Identify

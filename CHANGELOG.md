@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.3.1 — 2026-11-10
+- When an NVMe drive rejects `smartctl`'s identify command, the script no longer retries `smartctl` three more times before using the fallback. The drive records each rejected command in its error log, so 2.3 added 4 log entries per drive per run on affected units (seen on an SA3400); it's now 1.
+
 ## 2.3 — 2026-11-10
 - **NVMe drives that `smartctl` can't read** (`Read NVMe Identify Controller failed: NVMe Status 0x200b`, seen on an SA3400 with DSM 7.2) are now read with Synology's `synonvme --smart-info-get`, or with `nvme smart-log` if that's missing. The model and serial number come from `/sys` (or `nvme id-ctrl`). Health follows the NVMe rule: PASSED when there's no critical warning. The Notes column says which tool was used.
 - "could not read SMART data" now appears only when no health data at all could be read.
