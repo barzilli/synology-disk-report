@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.2 — 2026-11-10
+- **Long SAS health messages** (such as `DATA CHANNEL IMPENDING FAILURE … [asc=5d, ascq=30]`) no longer break the table. The Health column shows `FAILING` or `WARNING`, and a "Health warnings" list under the table gives each drive's full message, explaining common codes (asc 5D: failure predicted; asc 0B/14: physical element status change).
+- The CSV Health column now has the full message, quoted.
+
 ## 2.1 — 2026-11-10
 - **NVMe drives on a PCIe adapter card** (such as on an SA3600) are now named like Storage Manager, `Cache device <card>-<slot>`, instead of `M.2 Drive N`. A card is recognised by the PCIe switch between the drive and the CPU. Cards are numbered in PCI order, and slots follow DSM's own numbering. Built-in M.2 slots keep `M.2 Drive N`.
 

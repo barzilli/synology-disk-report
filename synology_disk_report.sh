@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.1"
+VERSION="2.2"
 
 case "${1:-}" in
     -h|--help)
@@ -87,6 +87,27 @@ ssd_life() {
             n = split("231 202 169 177 233", ids, " ")
             for (i = 1; i <= n; i++) if (ids[i] in v) { print v[ids[i]]; exit }
         }'
+}
+
+# SAS drives can report a whole sentence as their health status, e.g.
+#   "DATA CHANNEL IMPENDING FAILURE GENERAL HARD DRIVE FAILURE [asc=5d, ascq=30]"
+# The table shows a short word; the full text is listed under the table.
+health_short() {
+    case "$1" in
+        PASSED|OK|FAILED!|"?"|"") echo "${1:-?}" ;;
+        *FAIL*)                   echo "FAILING" ;;
+        *)                        echo "WARNING" ;;
+    esac
+}
+
+# Plain-English meaning of the SCSI codes that appear in SAS health messages
+health_explain() {
+    case "$1" in
+        *"asc=5d"*)                  echo "the drive predicts its own failure (SMART failure threshold exceeded) - replace it" ;;
+        *"asc=b, ascq=14"*|*"asc=b, ascq=0x14"*)
+                                     echo "physical element status change - part of the drive (for example a head) has reported a problem" ;;
+        *"asc=b,"*)                  echo "the drive has raised a warning" ;;
+    esac
 }
 
 # Strip commas / non-digits from a number like "12,345"
@@ -356,6 +377,7 @@ fi
 # Writes one line: SORTGRP <tab> SORTNUM <tab> SERIAL <tab> TABLE-ROW <tab> CSV-ROW
 process_disk() {
     local dev="$1" family vendor model serial make hours realloc pending uncorr health life
+    local health_full warn expl
     local slotinfo slotkey slot line csv
     local alt
     OUT="$("$SMARTCTL" -a "$dev" 2>/dev/null)"
@@ -404,10 +426,12 @@ process_disk() {
         uncorr="$(attr 198)"
     fi
 
-    health="$(printf '%s\n' "$OUT" | awk -F': *' '/overall-health self-assessment|SMART Health Status/ {print $NF; exit}')"
+    health_full="$(printf '%s\n' "$OUT" | awk '/overall-health self-assessment|SMART Health Status/ { sub(/^[^:]*: */, ""); print; exit }')"
+    health_full="${health_full:-?}"
+    health="$(health_short "$health_full")"
 
     hours="${hours:-?}"; realloc="${realloc:-?}"; pending="${pending:-?}"
-    uncorr="${uncorr:-?}"; health="${health:-?}"
+    uncorr="${uncorr:-?}"
 
     # SSD life remaining - SATA SSDs only; hard drives have no flash to wear out
     life="n/a"
@@ -422,9 +446,16 @@ process_disk() {
 
     line="$(printf "$FMT" "$slot" "$(basename "$dev")" "$make" "${model:0:24}" "$serial" \
         "$hours" "$realloc" "$pending" "$uncorr" "$life" "$health")"
-    csv="\"$slot\",$(basename "$dev"),\"$make\",\"$model\",\"$serial\",$hours,$realloc,$pending,$uncorr,$health,$life"
+    csv="\"$slot\",$(basename "$dev"),\"$make\",\"$model\",\"$serial\",$hours,$realloc,$pending,$uncorr,\"$health_full\",$life"
 
-    printf '%s\t%s\t%s\t%s\t%s\n' "${slotkey% *}" "${slotkey#* }" "$serial" "$line" "$csv"
+    # full health message, listed under the table when it was shortened
+    warn=""
+    if [ "$health" != "$health_full" ]; then
+        expl="$(health_explain "$health_full")"
+        warn="$slot ($(basename "$dev"), $serial): $health_full${expl:+@@NL@@-> $expl}"
+    fi
+
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${slotkey% *}" "${slotkey#* }" "$serial" "$line" "$csv" "$warn"
 }
 
 # --- NVMe / M.2 worker (runs in parallel) ------------------------------------
@@ -606,6 +637,12 @@ cat "$TMPD"/disks/* 2>/dev/null | sort -t "$(printf '\t')" -k1,1n -k2,2n \
 
 cut -f4 "$TMPD/all.rows"
 [ -n "$CSV_OUT" ] && cut -f5 "$TMPD/all.rows" >> "$CSV_OUT"
+
+if cut -f6 "$TMPD/all.rows" | grep -q .; then
+    echo
+    echo "Health warnings (full messages from the drives):"
+    cut -f6 "$TMPD/all.rows" | grep . | awk '{ gsub(/@@NL@@/, "\n      "); print "  " $0 }'
+fi
 
 echo
 echo "Realloc = reallocated sectors (HDD, ID 5) / retired NAND blocks (SSD, ID 5) / grown defects (SAS)"

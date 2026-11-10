@@ -88,7 +88,7 @@ Tick **Send run details by email** to have the report emailed to you.
 | Pending | Sectors that couldn't be read and are waiting to be remapped (ID 197) |
 | Uncorr | Sectors that couldn't be recovered (ID 198); for SAS drives, total uncorrected read + write + verify errors from the error counter log |
 | Life% | SATA SSDs only: life remaining as the SSD reports it (attribute 231, 202, 169, 177 or 233, depending on the maker). `n/a` for hard drives. |
-| Health | The drive's own overall SMART verdict |
+| Health | The drive's own overall SMART verdict. SAS drives can report a full sentence here; the table then shows **FAILING** or **WARNING**, and the full message, with a plain-English explanation for common codes, is listed under the table. The CSV always has the full text. |
 
 Plan to replace an SSD when Life% falls below about 10–20%. A drive with a few reallocated sectors that stays stable can keep running for years. A count that **keeps rising**, any **pending or uncorrectable** sectors, or a **FAILED** health result are signs to back up and plan a replacement.
 
