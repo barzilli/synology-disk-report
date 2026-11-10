@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9 — 2026-11-10
+- New **Life%** column: SATA SSD life remaining, read from the SSD's own wear attribute (231 SSD_Life_Left, 202 Percent_Lifetime_Remain, 169 Remaining_Life_Percentage, 177 Wear_Leveling_Count or 233 Media_Wearout_Indicator). Hard drives show `n/a`.
+- CSV gets a matching `SSDLifeRemaining` column, added at the end so existing spreadsheets keep working.
+- SSDs outside the main bays are now named `System Drive N`, matching Storage Manager on the HD6500 (was `Internal SSD N`).
+
 ## 1.8 — 2026-11-10
 - **SAS drives:** power-on hours are now read correctly. The old parser misread the `hours:minutes` format and missed Seagate's `number of hours powered up` line; if neither is in the standard output, the script falls back to `smartctl -x`.
 - **SAS drives:** the Uncorr column now shows total uncorrected read, write and verify errors from the error counter log, instead of `n/a`.

@@ -4,7 +4,8 @@
 # Disk health report for Synology NAS (DSM 6.x / 7.x)
 #
 # Shows: Make, Model, Serial Number, Power-On Hours, Bad Sector counters
-#        (Reallocated / Pending / Uncorrectable) and overall SMART health.
+#        (Reallocated / Pending / Uncorrectable), SATA SSD life remaining
+#        and overall SMART health.
 #        NVMe / M.2 cache drives get their own section with wear level,
 #        spare capacity, data written, error counters and temperature.
 #
@@ -16,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="1.8"
+VERSION="1.9"
 
 case "${1:-}" in
     -h|--help)
@@ -70,6 +71,22 @@ sas_hours() {
     awk '/number of hours powered up/ { sub(/.*= */, ""); print int($0); exit }
          /power on time, hours:minutes/ {
              for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+:[0-9]+$/) { split($i, a, ":"); print a[1]; exit } }'
+}
+
+# SATA SSD life remaining (%), from the first wear attribute the drive has.
+# These attributes count DOWN from 100 in the normalised VALUE column:
+#   231 SSD_Life_Left            (Synology SAT5200 series, Kingston, many others)
+#   202 Percent_Lifetime_Remain  (Crucial / Micron)
+#   169 Remaining_Life_Percentage (WD Red SA500 / Blue)
+#   177 Wear_Leveling_Count      (Samsung)
+#   233 Media_Wearout_Indicator  (Intel)
+ssd_life() {
+    printf '%s\n' "$OUT" | awk '
+        $1 ~ /^[0-9]+$/ && $4 ~ /^[0-9]+$/ { v[$1] = $4 + 0 }
+        END {
+            n = split("231 202 169 177 233", ids, " ")
+            for (i = 1; i <= n; i++) if (ids[i] in v) { print v[ids[i]]; exit }
+        }'
 }
 
 # Strip commas / non-digits from a number like "12,345"
@@ -240,15 +257,15 @@ get_slot() {
     esac
 
     # Not in Synology's bay list even though the list exists (e.g. the
-    # dedicated SSD slots on an HD6500): don't guess a bay number, which would
-    # clash with a real bay - name it by type instead.
+    # dedicated system SSD slots on an HD6500): don't guess a bay number, which
+    # would clash with a real bay. DSM calls these SSD slots "System Drive N".
     case "$name" in
         nvme*) ;;
         *)
             if printf '%s\n' "$SLOTMAP" | grep -q '|'; then
                 n="${name##*[!0-9]}"; [ -z "$n" ] && n=0
                 if [ "$(cat "$SYSFS/block/$name/queue/rotational" 2>/dev/null)" = "0" ]; then
-                    echo "2 $n|Internal SSD $n"
+                    echo "2 $n|System Drive $n"
                 else
                     echo "3 $n|Not in bay list"
                 fi
@@ -269,21 +286,21 @@ get_slot() {
 }
 
 # --- report header -----------------------------------------------------------
-FMT="%-22s %-10s %-16s %-24s %-22s %10s %8s %8s %8s %-8s\n"
+FMT="%-22s %-10s %-16s %-24s %-22s %10s %8s %8s %8s %6s %-8s\n"
 echo "Disk Report v$VERSION - $(hostname) - $(date '+%Y-%m-%d %H:%M')"
 echo
-printf "$FMT" "Slot" "Device" "Make" "Model" "Serial" "PowerOnHrs" "Realloc" "Pending" "Uncorr" "Health"
-printf "$FMT" "----" "------" "----" "-----" "------" "----------" "-------" "-------" "------" "------"
+printf "$FMT" "Slot" "Device" "Make" "Model" "Serial" "PowerOnHrs" "Realloc" "Pending" "Uncorr" "Life%" "Health"
+printf "$FMT" "----" "------" "----" "-----" "------" "----------" "-------" "-------" "------" "-----" "------"
 
 if [ -n "$CSV_OUT" ]; then
-    echo "Slot,Device,Make,Model,Serial,PowerOnHours,Reallocated,Pending,Uncorrectable,Health" > "$CSV_OUT" || {
+    echo "Slot,Device,Make,Model,Serial,PowerOnHours,Reallocated,Pending,Uncorrectable,Health,SSDLifeRemaining" > "$CSV_OUT" || {
         echo "ERROR: cannot write $CSV_OUT" >&2; CSV_OUT=""; }
 fi
 
 # --- per-disk work (runs in parallel) ----------------------------------------
 # Writes one line: SORTGRP <tab> SORTNUM <tab> SERIAL <tab> TABLE-ROW <tab> CSV-ROW
 process_disk() {
-    local dev="$1" family vendor model serial make hours realloc pending uncorr health
+    local dev="$1" family vendor model serial make hours realloc pending uncorr health life
     local slotinfo slotkey slot line csv
     local alt
     OUT="$("$SMARTCTL" -a "$dev" 2>/dev/null)"
@@ -337,13 +354,20 @@ process_disk() {
     hours="${hours:-?}"; realloc="${realloc:-?}"; pending="${pending:-?}"
     uncorr="${uncorr:-?}"; health="${health:-?}"
 
+    # SSD life remaining - SATA SSDs only; hard drives have no flash to wear out
+    life="n/a"
+    if printf '%s\n' "$OUT" | grep -qE '^Rotation Rate: *Solid State' \
+       || [ "$(cat "$SYSFS/block/$(basename "$dev")/queue/rotational" 2>/dev/null)" = "0" ]; then
+        life="$(ssd_life)"; life="${life:-?}"
+    fi
+
     slotinfo="$(get_slot "$dev")"
     slotkey="${slotinfo%%|*}"
     slot="${slotinfo#*|}"
 
     line="$(printf "$FMT" "$slot" "$(basename "$dev")" "$make" "${model:0:24}" "$serial" \
-        "$hours" "$realloc" "$pending" "$uncorr" "$health")"
-    csv="\"$slot\",$(basename "$dev"),\"$make\",\"$model\",\"$serial\",$hours,$realloc,$pending,$uncorr,$health"
+        "$hours" "$realloc" "$pending" "$uncorr" "$life" "$health")"
+    csv="\"$slot\",$(basename "$dev"),\"$make\",\"$model\",\"$serial\",$hours,$realloc,$pending,$uncorr,$health,$life"
 
     printf '%s\t%s\t%s\t%s\t%s\n' "${slotkey% *}" "${slotkey#* }" "$serial" "$line" "$csv"
 }
@@ -462,7 +486,9 @@ echo
 echo "Realloc = reallocated sectors (SATA ID 5) / grown defects (SAS)"
 echo "Pending = sectors waiting to be remapped (ID 197)"
 echo "Uncorr  = uncorrectable sectors (ID 198) / total uncorrected read+write errors (SAS)"
+echo "Life%   = SSD life remaining, as reported by the SSD itself (hard drives: n/a)"
 echo "Any non-zero bad sector count is worth watching; a rising count means plan a replacement."
+echo "Plan to replace an SSD when Life% falls below about 10-20%."
 # --- NVMe / M.2 cache section -------------------------------------------------
 cat "$TMPD"/nvme/* 2>/dev/null | sort -t "$(printf '\t')" -k1,1n -k2,2n \
     | awk -F'\t' '$3 == "" || !seen[$3]++' > "$TMPD/nvme.rows"
