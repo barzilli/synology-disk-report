@@ -4,7 +4,7 @@ A single shell script that prints a disk health report for a Synology NAS: one r
 
 - **Hard drives and SATA SSDs:** make, model, serial number, power-on hours, bad-sector counters (reallocated, pending, uncorrectable), SSD life remaining and the overall SMART health result.
 - **NVMe and SATA M.2 cache drives:** wear level (percent of rated endurance used and life remaining), spare capacity, total data written, media errors, error-log entries, unsafe shutdowns, temperature and NVMe critical warnings, with any problems spelled out in plain English.
-- **Slot names match Storage Manager:** `Drive 3`, `M.2 Drive 1`, and expansion units by model and number, such as `RX1217sas-2 Drive 5`. SATA M.2 SSDs on an adapter card show as `Cache device 1-1` (card 1, slot 1), and SSDs outside the main bays, such as the system SSDs on an HD6500, show as `System Drive N`.
+- **Slot names match Storage Manager:** `Drive 3`, `M.2 Drive 1`, and expansion units by model and number, such as `RX1217sas-2 Drive 5`. M.2 SSDs on a PCIe adapter card (NVMe or SATA) show as `Cache device 1-1` (card 1, slot 1), and SSDs outside the main bays, such as the system SSDs on an HD6500, show as `System Drive N`.
 - **Fast on big systems:** drives are queried in parallel, so a 60-drive setup finishes in a few seconds.
 - **Optional CSV output** for spreadsheets or tracking trends over time.
 
@@ -112,7 +112,7 @@ This section lists NVMe drives and SATA M.2 cache SSDs (for example on an M2D17 
 ## How it works
 
 - **Finding drives:** reads `/sys/block`, falling back to `smartctl --scan` and then to common Synology device names. RAID volumes, the USB boot device and virtual devices are skipped.
-- **Slot names:** come from Synology's own `synodisk --enum`. Expansion units are identified through `/sys/class/enclosure` and the SAS expander chain, and numbered per model in the order they're connected, the same way DSM numbers them. If `synodisk` isn't available, the slot is worked out from the device name, and less certain guesses are marked `(est.)`.
+- **Slot names:** come from Synology's own `synodisk --enum`. An NVMe drive with a PCIe switch between it and the CPU is on an adapter card; cards are numbered in PCI order and slots in DSM's own order. Expansion units are identified through `/sys/class/enclosure` and the SAS expander chain, and numbered per model in the order they're connected, the same way DSM numbers them. If `synodisk` isn't available, the slot is worked out from the device name, and less certain guesses are marked `(est.)`.
 - **Parallel queries:** each drive is read in a background job, up to `JOBS` at a time. Results are then sorted into bay order and any duplicates (the same serial number seen twice) are removed.
 - **Read-only:** the script only reads SMART data. It never changes drive settings and never starts a self-test.
 
@@ -131,6 +131,8 @@ This section lists NVMe drives and SATA M.2 cache SSDs (for example on an M2D17 
 - DSM 7.x, a 12-bay rackmount unit with SAS drives and four daisy-chained RX1217sas expansion units (60 drives in total)
 - DSM 7.x, an HD6500 with 60 SAS drives (Seagate Exos) and two Synology SAT5210 SATA SSDs
 - An RS4017xs+ with 16 SATA drives and two SATA M.2 cache SSDs on an adapter card
+- An FS3017 with 24 Micron SATA SSDs
+- An SA3600 with 12 SAS drives, an RX1217sas expansion unit and two NVMe cache SSDs on an adapter card
 - The NVMe section and the M.2 slot naming have been tested against simulated `smartctl` output only. Reports from systems with M.2 drives, especially on PCIe adapter cards, are welcome.
 
 ## Contributing

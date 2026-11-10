@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.1 — 2026-11-10
+- **NVMe drives on a PCIe adapter card** (such as on an SA3600) are now named like Storage Manager, `Cache device <card>-<slot>`, instead of `M.2 Drive N`. A card is recognised by the PCIe switch between the drive and the CPU. Cards are numbered in PCI order, and slots follow DSM's own numbering. Built-in M.2 slots keep `M.2 Drive N`.
+
 ## 2.0.1 — 2026-11-10
 - Legend and README: on SSDs the Realloc column counts retired NAND flash blocks, not disk sectors.
 

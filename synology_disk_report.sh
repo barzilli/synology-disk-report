@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.0.1"
+VERSION="2.1"
 
 case "${1:-}" in
     -h|--help)
@@ -233,6 +233,30 @@ if [ -d "$SYSFS/class/enclosure" ]; then
     done
 fi
 
+# --- NVMe drives on PCIe adapter cards (E10M20-T1, M2D20 ...) ----------------
+# Built-in M.2 slots connect straight to a CPU root port; an adapter card puts a
+# PCIe switch in between (root port -> switch -> switch port -> drive). DSM
+# names card slots "Cache device <card>-<slot>": cards in PCI order, slots in
+# DSM's own (synodisk) order, which need not match the PCIe port order.
+NVME_CARDMAP=""   # lines of "blockname|card|slot"
+nvlist=""
+for sys in "$SYSFS"/block/nvme*; do
+    [ -e "$sys/device" ] || continue
+    name="$(basename "$sys")"
+    addrs="$(readlink -f "$sys/device" | grep -oE '[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]')"
+    n="$(printf '%s\n' "$addrs" | grep -c .)"
+    [ "$n" -ge 4 ] || continue                      # no switch: built-in M.2 slot
+    card_key="$(printf '%s\n' "$addrs" | sed -n "$((n - 2))p")"   # the card's switch
+    id="$(printf '%s\n' "$SLOTMAP" | awk -F'|' -v d="/dev/$name" '$1 == d && $2 ~ /^M\.2 Drive / { print $2; exit }')"
+    id="${id##* }"
+    nvlist="$nvlist$card_key $(printf '%06d' "${id:-999999}") $name
+"
+done
+if [ -n "$nvlist" ]; then
+    NVME_CARDMAP="$(printf '%s' "$nvlist" | sort | awk '
+        { if ($1 != prev) { card++; slot = 0; prev = $1 } slot++; print $3 "|" card "|" slot }')"
+fi
+
 # SATA M.2 adapter cards (e.g. M2D17) hold 2 SSDs each; DSM names them
 # "Cache device <card>-<slot>", so cache device 3 is the first slot of card 2.
 cache_slot() {
@@ -251,8 +275,15 @@ is_cache_dev() {
 
 # Prints "SORTGROUP SORTNUM|Human-readable slot"
 get_slot() {
-    local dev="$1" name label n einfo ename eidx
+    local dev="$1" name label n einfo ename eidx ci card
     name="$(basename "$dev")"
+
+    # NVMe on an adapter card
+    ci="$(printf '%s\n' "$NVME_CARDMAP" | awk -F'|' -v b="$name" '$1 == b { print $2 " " $3; exit }')"
+    if [ -n "$ci" ]; then
+        card="${ci% *}"; n="${ci#* }"
+        echo "2 $((card * 10 + n))|Cache device $card-$n"; return
+    fi
     label="$(printf '%s\n' "$SLOTMAP" | awk -F'|' -v d="$dev" '$1 == d { print $2; exit }')"
 
     case "$label" in
