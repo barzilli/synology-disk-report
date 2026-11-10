@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.0.1 — 2026-11-10
+- Legend and README: on SSDs the Realloc column counts retired NAND flash blocks, not disk sectors.
+
 ## 2.0 — 2026-11-10
 - **SATA M.2 cache SSDs** (for example on an M2D17 adapter card) now appear in the NVMe / M.2 Cache Drives section instead of the main table. Their wear, written data (when the unit is known), uncorrectable errors, error-log count, unexpected power losses and temperature fill the same columns as NVMe drives, and the Notes column flags heavy wear, reallocated sectors and uncorrectable errors.
 - **CSV change:** these drives move from the main CSV to `*_nvme.csv`.

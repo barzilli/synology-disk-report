@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.0"
+VERSION="2.0.1"
 
 case "${1:-}" in
     -h|--help)
@@ -577,7 +577,7 @@ cut -f4 "$TMPD/all.rows"
 [ -n "$CSV_OUT" ] && cut -f5 "$TMPD/all.rows" >> "$CSV_OUT"
 
 echo
-echo "Realloc = reallocated sectors (SATA ID 5) / grown defects (SAS)"
+echo "Realloc = reallocated sectors (HDD, ID 5) / retired NAND blocks (SSD, ID 5) / grown defects (SAS)"
 echo "Pending = sectors waiting to be remapped (ID 197)"
 echo "Uncorr  = uncorrectable sectors (ID 198) / total uncorrected read+write errors (SAS)"
 echo "Life%   = SSD life remaining, as reported by the SSD itself (hard drives: n/a)"

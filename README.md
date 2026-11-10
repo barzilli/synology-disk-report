@@ -84,7 +84,7 @@ Tick **Send run details by email** to have the report emailed to you.
 | Column | Meaning |
 |---|---|
 | PowerOnHrs | Total hours the drive has been powered on (8,760 hours = 1 year) |
-| Realloc | Sectors the drive found bad and replaced with spares (SMART ID 5; the grown defect list on SAS drives) |
+| Realloc | Hard drives: sectors found bad and replaced with spares (SMART ID 5). SSDs: retired NAND flash blocks (also ID 5); a few are normal, and the drive has thousands of spare blocks. SAS drives: the grown defect list. |
 | Pending | Sectors that couldn't be read and are waiting to be remapped (ID 197) |
 | Uncorr | Sectors that couldn't be recovered (ID 198); for SAS drives, total uncorrected read + write + verify errors from the error counter log |
 | Life% | SATA SSDs only: life remaining as the SSD reports it (attribute 231, 202, 169, 177 or 233, depending on the maker). `n/a` for hard drives. |
