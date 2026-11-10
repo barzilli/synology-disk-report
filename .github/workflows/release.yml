@@ -1,0 +1,62 @@
+# Creates a tag and a GitHub Release whenever the VERSION in the script
+# changes on main. The release notes come from that version's CHANGELOG.md
+# section, and the script is attached for direct download.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - synology_disk_report.sh
+      - CHANGELOG.md
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from the script
+        id: ver
+        run: |
+          ver="$(sed -n 's/^VERSION="\([^"]*\)".*/\1/p' synology_disk_report.sh | head -1)"
+          [ -n "$ver" ] || { echo "No VERSION= line found in synology_disk_report.sh" >&2; exit 1; }
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "tag=v$ver"    >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version is already released
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.ver.outputs.tag }}" >/dev/null 2>&1 \
+             || git ls-remote --exit-code --tags origin "refs/tags/${{ steps.ver.outputs.tag }}" >/dev/null; then
+            echo "${{ steps.ver.outputs.tag }} already exists - nothing to do."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract release notes from CHANGELOG.md
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          awk -v ver="${{ steps.ver.outputs.version }}" '
+            /^## / { if (found) exit; if (index($0, "## " ver " ") == 1 || $0 == "## " ver) { found = 1; next } }
+            found' CHANGELOG.md > notes.md
+          [ -s notes.md ] || echo "See CHANGELOG.md for details." > notes.md
+          cat notes.md
+
+      - name: Create tag and release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.ver.outputs.tag }}" synology_disk_report.sh \
+            --target "$GITHUB_SHA" \
+            --title "${{ steps.ver.outputs.tag }}" \
+            --notes-file notes.md

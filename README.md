@@ -134,6 +134,10 @@ Plan to replace an SSD when Life% falls below about 10–20%. A drive with a few
 
 Issues and pull requests are welcome, especially output samples from Synology models that aren't listed above. Please replace serial numbers in anything you paste.
 
+### Releases
+
+Releases are automatic. When a commit to `main` changes the `VERSION=` line in `synology_disk_report.sh`, the [Release workflow](.github/workflows/release.yml) creates the `vX.Y` tag and a GitHub Release, using that version's section of `CHANGELOG.md` as the notes and attaching the script. So for a new version: bump `VERSION`, add a `## X.Y` section to the changelog, and push.
+
 ## License
 
 [MIT](LICENSE)
