@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.2"
+VERSION="2.3"
 
 case "${1:-}" in
     -h|--help)
@@ -188,6 +188,13 @@ SYNODISK=""
 for p in /usr/syno/bin/synodisk /usr/syno/sbin/synodisk "$(command -v synodisk 2>/dev/null)"; do
     [ -n "$p" ] && [ -x "$p" ] && SYNODISK="$p" && break
 done
+
+# Fallback NVMe readers for when smartctl can't identify a drive
+SYNONVME=""
+for p in /usr/syno/bin/synonvme /usr/syno/sbin/synonvme "$(command -v synonvme 2>/dev/null)"; do
+    [ -n "$p" ] && [ -x "$p" ] && SYNONVME="$p" && break
+done
+NVMECLI="$(command -v nvme 2>/dev/null)"
 
 SLOTMAP=""   # lines of "/dev/xxx|Label"
 if [ -n "$SYNODISK" ]; then
@@ -458,6 +465,36 @@ process_disk() {
     printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${slotkey% *}" "${slotkey#* }" "$serial" "$line" "$csv" "$warn"
 }
 
+# Map synonvme --smart-info-get / "nvme smart-log" output onto smartctl's
+# field names, so the same parsing works for all three tools.
+nvme_normalize() {
+    awk 'index($0, ":") {
+        k = substr($0, 1, index($0, ":") - 1); v = substr($0, index($0, ":") + 1)
+        gsub(/^[ \t]+|[ \t]+$/, "", k); gsub(/^[ \t]+|[ \t]+$/, "", v)
+        k = tolower(k); gsub(/_/, " ", k)
+        m = ""
+        if      (k == "critical warning")                 m = "Critical Warning"
+        else if (k == "temperature")                      m = "Temperature"
+        else if (k == "available spare")                  m = "Available Spare"
+        else if (k == "available spare threshold")        m = "Available Spare Threshold"
+        else if (k == "percentage used")                  m = "Percentage Used"
+        else if (k == "data units written")               m = "Data Units Written"
+        else if (k == "power on hours")                   m = "Power On Hours"
+        else if (k == "unsafe shutdowns")                 m = "Unsafe Shutdowns"
+        else if (k == "media errors")                     m = "Media and Data Integrity Errors"
+        else if (k == "number of error log entries" || k == "num err log entries") m = "Error Information Log Entries"
+        else if (k == "warning temperature time")         m = "Warning  Comp. Temperature Time"
+        else if (k == "critical composite temperature time") m = "Critical Comp. Temperature Time"
+        if (m != "") print m ": " v
+    }'
+}
+
+# A drive attribute the kernel recorded at start-up, e.g. model or serial
+sysattr() {
+    local f="$SYSFS/block/$1/device/$2"
+    [ -r "$f" ] && sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "$f"
+}
+
 # --- NVMe / M.2 worker (runs in parallel) ------------------------------------
 FMT_N="%-17s %-9s %-15s %-26s %-20s %10s %5s %5s %7s %9s %8s %7s %7s %5s %-8s %s\n"
 
@@ -466,7 +503,7 @@ add_note() { NOTES="${NOTES:+$NOTES; }$1"; }
 process_nvme() {
     local dev="$1" name ctrl try model serial make hours used life spare spthr
     local units written media errlog unsafe temp crit c warnt critt health
-    local slotinfo slotkey slot line csv
+    local slotinfo slotkey slot line csv src alt idc
     name="$(basename "$dev")"
     ctrl="/dev/${name%n[0-9]*}"          # nvme0n1 -> nvme0 (the controller)
 
@@ -476,6 +513,23 @@ process_nvme() {
         OUT="$("$SMARTCTL" $try 2>/dev/null)"
         printf '%s\n' "$OUT" | grep -q '^Percentage Used' && break
     done
+
+    # Some DSM builds' smartctl can't identify these drives ("Read NVMe Identify
+    # Controller failed"), but Synology's synonvme or nvme-cli can still read
+    # the health log.
+    src="smartctl"
+    if ! printf '%s\n' "$OUT" | grep -q '^Percentage Used'; then
+        alt=""
+        [ -n "$SYNONVME" ] && alt="$("$SYNONVME" --smart-info-get "$ctrl" 2>/dev/null | nvme_normalize)"
+        if printf '%s\n' "$alt" | grep -q '^Percentage Used'; then
+            src="synonvme"
+        elif [ -n "$NVMECLI" ]; then
+            alt="$("$NVMECLI" smart-log "$ctrl" 2>/dev/null | nvme_normalize)"
+            printf '%s\n' "$alt" | grep -q '^Percentage Used' && src="nvme-cli"
+        fi
+        [ "$src" != "smartctl" ] && OUT="$OUT
+$alt"
+    fi
 
     model="$(field 'Model Number')"
     serial="$(field 'Serial Number')"
@@ -493,6 +547,26 @@ process_nvme() {
     critt="$(printf '%s\n' "$OUT" | awk -F': *' '/^Critical Comp\. Temperature Time/ {gsub(/,/,"",$2); print $2+0; exit}')"
     health="$(printf '%s\n' "$OUT" | awk -F': *' '/overall-health self-assessment|SMART Health Status/ {print $NF; exit}')"
 
+    # no identify data: use what the kernel recorded, then nvme-cli
+    [ -z "$model" ]  && model="$(sysattr "$name" model)"
+    [ -z "$serial" ] && serial="$(sysattr "$name" serial)"
+    if [ -z "$model$serial" ] && [ -n "$NVMECLI" ]; then
+        idc="$("$NVMECLI" id-ctrl "$ctrl" 2>/dev/null)"
+        model="$(printf '%s\n' "$idc"  | awk -F: '/^mn[ \t]/ { sub(/^[ \t]+/, "", $2); sub(/[ \t]+$/, "", $2); print $2; exit }')"
+        serial="$(printf '%s\n' "$idc" | awk -F: '/^sn[ \t]/ { sub(/^[ \t]+/, "", $2); sub(/[ \t]+$/, "", $2); print $2; exit }')"
+    fi
+
+    # critical warning: smartctl prints hex (0x00), synonvme / nvme-cli decimal
+    c=""
+    case "$crit" in
+        0x*|0X*) printf '%s' "$crit" | grep -qiE '^0x[0-9a-f]+$' && c=$((crit)) ;;
+        *)       printf '%s' "$crit" | grep -qE '^[0-9]+$' && c=$((10#$crit)) ;;
+    esac
+    # without a health line, use the NVMe rule: healthy when no critical warning
+    if [ -z "$health" ] && [ -n "$c" ]; then
+        if [ "$c" -eq 0 ]; then health="PASSED"; else health="FAILED!"; fi
+    fi
+
     make="$(get_make "" "$model" "")"
     [ "$make" = "Unknown" ] && [ -n "$model" ] && make="${model%% *}"
 
@@ -507,11 +581,10 @@ process_nvme() {
 
     # ---- plain-English notes ----
     NOTES=""
-    if [ -z "$model" ] && [ -z "$serial" ]; then
+    if [ -z "$used" ] && [ -z "$hours" ]; then
         add_note "could not read SMART data"
     fi
-    if printf '%s' "$crit" | grep -qiE '^0x[0-9a-f]+$'; then
-        c=$((crit))
+    if [ -n "$c" ]; then
         [ $((c & 1))  -ne 0 ] && add_note "CRITICAL: spare below threshold"
         [ $((c & 2))  -ne 0 ] && add_note "CRITICAL: temperature out of range"
         [ $((c & 4))  -ne 0 ] && add_note "CRITICAL: reliability degraded"
@@ -531,6 +604,7 @@ process_nvme() {
     [ -n "$warnt" ] && [ "$warnt" -gt 0 ] && add_note "ran above warning temp for $warnt min"
     case "$health" in ""|PASSED|OK) ;; *) add_note "SMART health: $health" ;; esac
     [ -z "$NOTES" ] && NOTES="OK"
+    [ "$src" != "smartctl" ] && NOTES="$NOTES (read with $src)"
 
     slotinfo="$(get_slot "$dev")"
     slotkey="${slotinfo%%|*}"

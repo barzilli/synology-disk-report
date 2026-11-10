@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.3 — 2026-11-10
+- **NVMe drives that `smartctl` can't read** (`Read NVMe Identify Controller failed: NVMe Status 0x200b`, seen on an SA3400 with DSM 7.2) are now read with Synology's `synonvme --smart-info-get`, or with `nvme smart-log` if that's missing. The model and serial number come from `/sys` (or `nvme id-ctrl`). Health follows the NVMe rule: PASSED when there's no critical warning. The Notes column says which tool was used.
+- "could not read SMART data" now appears only when no health data at all could be read.
+
 ## 2.2 — 2026-11-10
 - **Long SAS health messages** (such as `DATA CHANNEL IMPENDING FAILURE … [asc=5d, ascq=30]`) no longer break the table. The Health column shows `FAILING` or `WARNING`, and a "Health warnings" list under the table gives each drive's full message, explaining common codes (asc 5D: failure predicted; asc 0B/14: physical element status change).
 - The CSV Health column now has the full message, quoted.

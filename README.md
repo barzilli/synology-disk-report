@@ -114,6 +114,7 @@ This section lists NVMe drives and SATA M.2 cache SSDs (for example on an M2D17 
 - **Finding drives:** reads `/sys/block`, falling back to `smartctl --scan` and then to common Synology device names. RAID volumes, the USB boot device and virtual devices are skipped.
 - **Slot names:** come from Synology's own `synodisk --enum`. An NVMe drive with a PCIe switch between it and the CPU is on an adapter card; cards are numbered in PCI order and slots in DSM's own order. Expansion units are identified through `/sys/class/enclosure` and the SAS expander chain, and numbered per model in the order they're connected, the same way DSM numbers them. If `synodisk` isn't available, the slot is worked out from the device name, and less certain guesses are marked `(est.)`.
 - **Parallel queries:** each drive is read in a background job, up to `JOBS` at a time. Results are then sorted into bay order and any duplicates (the same serial number seen twice) are removed.
+- **NVMe fallback:** some DSM builds' `smartctl` can't identify certain NVMe drives (`Read NVMe Identify Controller failed`). The script then reads the health log with Synology's `synonvme --smart-info-get` or with `nvme smart-log`, takes the model and serial number from `/sys`, and notes which tool it used.
 - **Read-only:** the script only reads SMART data. It never changes drive settings and never starts a self-test.
 
 ## Troubleshooting
@@ -122,7 +123,7 @@ This section lists NVMe drives and SATA M.2 cache SSDs (for example on an M2D17 
 |---|---|
 | `No disks found.` | Run `ls /sys/block` and `smartctl --scan` and open an issue with the output. |
 | Slot names don't match Storage Manager | Run `synodisk --enum` (and `synodisk --enum -t cache` for M.2) and open an issue with the output. |
-| `could not read SMART data` for an NVMe drive | The DSM build of `smartctl` may be too old to read that drive. Check `smartctl -a -d nvme /dev/nvme0`. |
+| `could not read SMART data` for an NVMe drive | `smartctl`, `synonvme --smart-info-get` and `nvme smart-log` all failed for that drive. Check `smartctl -a -d nvme /dev/nvme0` and `synonvme --smart-info-get /dev/nvme0`. |
 | Report is slow | Raise `JOBS`, for example `JOBS=32`. |
 | Report makes the NAS sluggish while it runs | Lower `JOBS`, for example `JOBS=4`. |
 
@@ -133,6 +134,7 @@ This section lists NVMe drives and SATA M.2 cache SSDs (for example on an M2D17 
 - An RS4017xs+ with 16 SATA drives and two SATA M.2 cache SSDs on an adapter card
 - An FS3017 with 24 Micron SATA SSDs
 - An SA3600 with 12 SAS drives, an RX1217sas expansion unit and two NVMe cache SSDs on an adapter card
+- An SA3400 (DSM 7.2) with SAS drives, two RX1217sas expansion units and NVMe cache SSDs that `smartctl` can't read
 - The NVMe section and the M.2 slot naming have been tested against simulated `smartctl` output only. Reports from systems with M.2 drives, especially on PCIe adapter cards, are welcome.
 
 ## Contributing
