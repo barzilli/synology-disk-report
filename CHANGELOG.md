@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.7 — 2026-11-10
+- **The header line now shows the NAS model**, for example `Disk Report v2.7 - nas01 - Synology DS1621+ - 2026-11-10 18:51`. It is read from `/etc.defaults/synoinfo.conf` (`upnpmodelname`), or from `/proc/sys/kernel/syno_hw_version` if that has none, and left out if neither is available.
+
 ## 2.6 — 2026-11-10
 - **Cleanup, no change to the report:** the script is about 30% shorter (772 → 527 lines) and about 40% faster. Duplicated code is merged into shared functions, the unused NVMe branch in the hard-drive reader is removed, and bash built-ins replace many small helper processes. The table, both CSV files, `--help` and the error messages are identical to 2.5 on every tested configuration.
 

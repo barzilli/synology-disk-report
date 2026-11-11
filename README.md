@@ -13,7 +13,7 @@ Nothing to install: it uses only `bash` and `smartctl`, which are both part of D
 ## Sample output
 
 ```
-Disk Report v2.6 - nas01 - 2026-11-09 10:27
+Disk Report v2.7 - nas01 - Synology SA3600 - 2026-11-09 10:27
 
 Slot                   Device     Make             Model                    Serial                 PowerOnHrs  Realloc  Pending   Uncorr  Life% Health
 ----                   ------     ----             -----                    ------                 ----------  -------  -------   ------  ----- ------
@@ -111,6 +111,7 @@ This section lists NVMe drives, SATA M.2 cache SSDs (for example on an M2D17 ada
 
 ## How it works
 
+- **NAS model:** the header line shows the model from `/etc.defaults/synoinfo.conf`, or from `/proc/sys/kernel/syno_hw_version` if that has none. It is left out if neither is available.
 - **Finding drives:** reads `/sys/block`, falling back to `smartctl --scan` and then to common Synology device names. RAID volumes, the USB boot device and virtual devices are skipped.
 - **Slot names:** come from Synology's own `synodisk --enum`. An NVMe drive with a PCIe switch between it and the CPU is on an adapter card; cards are numbered in PCI order and slots in DSM's own order. Expansion units are identified through `/sys/class/enclosure` and the SAS expander chain, and numbered per model in the order they're connected, the same way DSM numbers them. If `synodisk` isn't available, the slot is worked out from the device name, and less certain guesses are marked `(est.)`.
 - **Parallel queries:** each drive is read in a background job, up to `JOBS` at a time. Results are then sorted into bay order and any duplicates (the same serial number seen twice) are removed.

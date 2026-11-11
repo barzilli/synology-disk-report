@@ -17,7 +17,7 @@
 #           (NVMe drives go to /volume1/report_nvme.csv)
 # ---------------------------------------------------------------------------
 
-VERSION="2.6"
+VERSION="2.7"
 
 case "${1:-}" in
     -h|--help)    sed -n '3,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -28,6 +28,8 @@ esac
 CSV_OUT="${1:-}"
 JOBS="${JOBS:-32}"         # disks queried at once (32 suits large SAS setups; lower it on small units)
 SYSFS="${SYSFS:-/sys}"
+SYNOINFO="${SYNOINFO:-/etc.defaults/synoinfo.conf}"
+HW_VERSION="${HW_VERSION:-/proc/sys/kernel/syno_hw_version}"
 TAB=$'\t'
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -48,6 +50,14 @@ SMARTCTL="$(find_tool smartctl /usr/bin/smartctl /bin/smartctl /usr/sbin/smartct
 SYNODISK="$(find_tool synodisk /usr/syno/bin/synodisk /usr/syno/sbin/synodisk)"      # bay numbers
 SYNONVME="$(find_tool synonvme /usr/syno/bin/synonvme /usr/syno/sbin/synonvme)"      # NVMe fallback
 NVMECLI="$(command -v nvme 2>/dev/null)"                                             # NVMe fallback
+
+# NAS model as DSM shows it, e.g. "DS1621+"; empty when it can't be found
+nas_model() {
+    local m
+    m="$(sed -n 's/^upnpmodelname="\(.*\)".*/\1/p' "$SYNOINFO" 2>/dev/null | head -1)"
+    [ -z "$m" ] && m="$(cat "$HW_VERSION" 2>/dev/null)"
+    echo "$m"
+}
 
 # --- parsing helpers (all read the smartctl output in $OUT) ------------------
 has()   { grep -qE "$1" <<< "$OUT"; }
@@ -449,7 +459,8 @@ process_sata_cache() {
 }
 
 # --- run ---------------------------------------------------------------------
-echo "Disk Report v$VERSION - $(hostname) - $(date '+%Y-%m-%d %H:%M')"
+NAS_MODEL="$(nas_model)"
+echo "Disk Report v$VERSION - $(hostname)${NAS_MODEL:+ - Synology $NAS_MODEL} - $(date '+%Y-%m-%d %H:%M')"
 echo
 printf "$FMT" "Slot" "Device" "Make" "Model" "Serial" "PowerOnHrs" "Realloc" "Pending" "Uncorr" "Life%" "Health"
 printf "$FMT" "----" "------" "----" "-----" "------" "----------" "-------" "-------" "------" "-----" "------"
