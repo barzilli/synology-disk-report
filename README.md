@@ -13,7 +13,7 @@ Nothing to install: it uses only `bash` and `smartctl`, which are both part of D
 ## Sample output
 
 ```
-Disk Report v1.9 - nas01 - 2026-11-09 10:27
+Disk Report v2.6 - nas01 - 2026-11-09 10:27
 
 Slot                   Device     Make             Model                    Serial                 PowerOnHrs  Realloc  Pending   Uncorr  Life% Health
 ----                   ------     ----             -----                    ------                 ----------  -------  -------   ------  ----- ------

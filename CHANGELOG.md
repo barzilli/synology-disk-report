@@ -1,5 +1,8 @@
 # Changelog
 
+## 2.6 — 2026-11-10
+- **Cleanup, no change to the report:** the script is about 30% shorter (772 → 527 lines) and about 40% faster. Duplicated code is merged into shared functions, the unused NVMe branch in the hard-drive reader is removed, and bash built-ins replace many small helper processes. The table, both CSV files, `--help` and the error messages are identical to 2.5 on every tested configuration.
+
 ## 2.5 — 2026-11-10
 - **NVMe drives in built-in M.2 slots** (such as on a DS918+) are now named `Cache device 1`, `Cache device 2` … as in Storage Manager, instead of `M.2 Drive N`. If DSM doesn't list a drive, its number is estimated from the device name and marked `(est.)`.
 
