@@ -135,7 +135,7 @@ This section lists NVMe drives, SATA M.2 cache SSDs (for example on an M2D17 ada
 - An RS4017xs+ with 16 SATA drives and two SATA M.2 cache SSDs on an adapter card
 - An FS3017 with 24 Micron SATA SSDs
 - A DS918+ with 4 SATA drives and two NVMe SSDs in its built-in M.2 slots
-- A DS1621+
+- A DS1621+ with 4 SATA drives and two NVMe SSDs in its built-in M.2 slots that `smartctl` can't read
 - An SA3600 with 12 SAS drives, an RX1217sas expansion unit and two NVMe cache SSDs on an adapter card
 - An SA3400 (DSM 7.2) with SAS drives, two RX1217sas expansion units and NVMe cache SSDs that `smartctl` can't read
 - An RS10613xs+ with 10 SAS drives and two 2.5" SATA SSDs in its dedicated cache bays
